@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infra-monitor
+  labels:
+    app: infra-monitor
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: infra-monitor
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: infra-monitor
+    spec:
+      containers:
+        - name: infra-monitor
+          image: infra-monitor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+
+          # --- Self-healing: liveness ---
+          # If this fails 3x, kubelet KILLS and RESTARTS the container.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+
+          # --- Traffic gating: readiness ---
+          # If this fails, pod is pulled out of Service endpoints (no restart, no traffic).
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 2
+            timeoutSeconds: 2
+
+          # --- Startup probe: protects slow-starting containers from being
+          # killed by liveness before they've even booted ---
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            failureThreshold: 10
+            periodSeconds: 3
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
